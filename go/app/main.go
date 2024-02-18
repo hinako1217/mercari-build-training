@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -20,22 +23,108 @@ type Response struct {
 	Message string `json:"message"`
 }
 
+/*
+list of item
+*/
+type ItemList struct {
+	Items []Item `json:"items"`
+}
+
+/*
+name, category and image of goods
+*/
+type Item struct {
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Image    string `json:"image_name"`
+}
+
+/*
+e.GET("/", root)
+*/
 func root(c echo.Context) error {
 	res := Response{Message: "Hello, world!"}
 	return c.JSON(http.StatusOK, res)
 }
 
-func addItem(c echo.Context) error {
-	// Get form data
-	name := c.FormValue("name")
-	c.Logger().Infof("Receive item: %s", name)
+var itemlist ItemList
 
-	message := fmt.Sprintf("item received: %s", name)
+/*
+e.POST("/items", addItem)
+*/
+func addItem(c echo.Context) error {
+	var item Item
+	// Get form data
+	item.Name = c.FormValue("name")
+	item.Category = c.FormValue("category")
+	imagepath := c.FormValue("image")
+	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, imagepath)
+	message := fmt.Sprintf("item received: %s", item.Name)
 	res := Response{Message: message}
+
+	//hash
+	hash_sha256 := sha256.Sum256([]byte(imagepath))   //sha256でhash化
+	str_hash_sha256 := fmt.Sprintf("%x", hash_sha256) //stringに変換
+	item.Image = str_hash_sha256 + ".jpg"             //<hash>.jpg
+
+	// add item to list
+	itemlist.Items = append(itemlist.Items, item)
+
+	//open file  if it doesn't exist, create file
+	jsonfile, err := os.OpenFile("items.json", os.O_WRONLY|os.O_CREATE, 0664)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer jsonfile.Close()
+
+	//encode
+	encoder := json.NewEncoder(jsonfile)
+	if err := encoder.Encode(itemlist); err != nil {
+		log.Fatal(err)
+	}
 
 	return c.JSON(http.StatusOK, res)
 }
 
+func decodeJson() ItemList {
+	jsonfile, err := os.Open("items.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer jsonfile.Close()
+
+	//decode
+	var itemlist ItemList
+	decoder := json.NewDecoder(jsonfile)
+	if err := decoder.Decode(&itemlist); err != nil {
+		log.Fatal(err)
+	}
+
+	return itemlist
+}
+
+/*
+e.GET("/items". getItemList)
+*/
+func getItemList(c echo.Context) error {
+	itemlist := decodeJson()
+
+	return c.JSON(http.StatusOK, itemlist)
+}
+
+/*
+e.GET("/items/:id", getItemDetail)
+*/
+func getItemDetail(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id")) //string to int
+	itemlist := decodeJson()
+
+	return c.JSON(http.StatusOK, itemlist.Items[id])
+}
+
+/*
+e.GET("/image/:imageFilename", getImg)
+*/
 func getImg(c echo.Context) error {
 	// Create image path
 	imgPath := path.Join(ImgDir, c.Param("imageFilename"))
@@ -71,8 +160,9 @@ func main() {
 	// Routes
 	e.GET("/", root)
 	e.POST("/items", addItem)
+	e.GET("/items", getItemList)
+	e.GET("/items/:id", getItemDetail)
 	e.GET("/image/:imageFilename", getImg)
-
 
 	// Start server
 	e.Logger.Fatal(e.Start(":9000"))
