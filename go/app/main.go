@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -57,15 +58,29 @@ func addItem(c echo.Context) error {
 	// Get form data
 	item.Name = c.FormValue("name")
 	item.Category = c.FormValue("category")
-	imagepath := c.FormValue("image")
-	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, imagepath)
+	imagefile, err := c.FormFile("image")
+	if err != nil {
+		return err
+	}
+
+	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, imagefile)
 	message := fmt.Sprintf("item received: %s", item.Name)
 	res := Response{Message: message}
+	//画像ファイルをオープン
+	src, err := imagefile.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
 
 	//hash
-	hash_sha256 := sha256.Sum256([]byte(imagepath))   //sha256でhash化
-	str_hash_sha256 := fmt.Sprintf("%x", hash_sha256) //stringに変換
-	item.Image = str_hash_sha256 + ".jpg"             //<hash>.jpg
+	h := sha256.New()
+	if _, err := io.Copy(h, src); err != nil {
+		//log.Fatal(err)
+		return err
+	}
+	str_hash_sha256 := fmt.Sprintf("%x", h.Sum(nil))
+	item.Image = str_hash_sha256 + ".jpg"
 
 	// add item to list
 	itemlist.Items = append(itemlist.Items, item)
@@ -116,10 +131,17 @@ func getItemList(c echo.Context) error {
 e.GET("/items/:id", getItemDetail)
 */
 func getItemDetail(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id")) //string to int
+	id, err := strconv.Atoi(c.Param("id")) //string to int
+	if err != nil {
+		log.Fatal(err)
+	}
 	itemlist := decodeJson()
 
-	return c.JSON(http.StatusOK, itemlist.Items[id])
+	if id <= 0 || id > len(itemlist.Items) {
+		log.Fatal(err)
+	}
+
+	return c.JSON(http.StatusOK, itemlist.Items[id-1])
 }
 
 /*
