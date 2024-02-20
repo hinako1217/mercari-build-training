@@ -55,6 +55,7 @@ e.POST("/items", addItem)
 */
 func addItem(c echo.Context) error {
 	var item Item
+
 	// Get form data
 	item.Name = c.FormValue("name")
 	item.Category = c.FormValue("category")
@@ -143,7 +144,7 @@ e.GET("/items/:id", getItemDetail)
 func getItemDetail(c echo.Context) error {
 	id, err := strconv.Atoi(c.Param("id")) //string to int
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	itemlist := decodeJson()
 
@@ -178,7 +179,7 @@ func main() {
 	// Middleware
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	e.Logger.SetLevel(log.INFO)
+	e.Logger.SetLevel(log.DEBUG) //log.INFOからlog.DEBUGに変更
 
 	frontURL := os.Getenv("FRONT_URL")
 	if frontURL == "" {
