@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -47,8 +49,6 @@ func root(c echo.Context) error {
 	res := Response{Message: "Hello, world!"}
 	return c.JSON(http.StatusOK, res)
 }
-
-var itemlist ItemList
 
 /*
 e.POST("/items", addItem)
@@ -89,20 +89,27 @@ func addItem(c echo.Context) error {
 		return err
 	}
 
-	// add item to list
-	itemlist.Items = append(itemlist.Items, item)
-
-	//open file  if it doesn't exist, create file
-	jsonfile, err := os.OpenFile("items.json", os.O_WRONLY|os.O_CREATE, 0664)
+	//データベースを開く
+	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer jsonfile.Close()
+	defer db.Close()
 
-	//encode
-	encoder := json.NewEncoder(jsonfile)
-	if err := encoder.Encode(itemlist); err != nil {
-		log.Fatal(err)
+	err = db.Ping()
+	if err != nil {
+		return err
+	}
+
+	//データベースへ商品を追加
+	stmt, err := db.Prepare("INSERT INTO items (name, category, image_name) VALUES (?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	if _, err = stmt.Exec(item.Name, item.Category, item.Image); err != nil {
+		return err
 	}
 
 	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, item.Image)
@@ -110,6 +117,41 @@ func addItem(c echo.Context) error {
 	res := Response{Message: message}
 
 	return c.JSON(http.StatusOK, res)
+}
+
+/*
+e.GET("/items". getItemList)
+*/
+func getItemList(c echo.Context) error {
+	//データベースを開く
+	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		return err
+	}
+
+	//データベースから商品を取得
+	rows, err := db.Query("SELECT name, category, image_name FROM items")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var itemlist ItemList
+	for rows.Next() {
+		var item Item
+		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
+			return err
+		}
+		itemlist.Items = append(itemlist.Items, item)
+	}
+
+	return c.JSON(http.StatusOK, itemlist)
 }
 
 func decodeJson() ItemList {
@@ -130,29 +172,54 @@ func decodeJson() ItemList {
 }
 
 /*
-e.GET("/items". getItemList)
-*/
-func getItemList(c echo.Context) error {
-	itemlist := decodeJson()
-
-	return c.JSON(http.StatusOK, itemlist)
-}
-
-/*
 e.GET("/items/:id", getItemDetail)
 */
 func getItemDetail(c echo.Context) error {
+	var itemlist ItemList
 	id, err := strconv.Atoi(c.Param("id")) //string to int
 	if err != nil {
 		return err
 	}
-	itemlist := decodeJson()
+	itemlist = decodeJson()
 
 	if id <= 0 || id > len(itemlist.Items) {
 		log.Fatal(err)
 	}
 
 	return c.JSON(http.StatusOK, itemlist.Items[id-1])
+}
+
+func getItemByKeyword(c echo.Context) error {
+	//データベースを開く
+	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		return err
+	}
+
+	//データベースから指定したキーワードを含む商品一覧を取得
+	keyword := c.QueryParam("keyword")
+	rows, err := db.Query("SELECT name, category, image_name FROM items WHERE name LIKE CONCAT('%', ?, '%')", keyword)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var itemlist ItemList
+	for rows.Next() {
+		var item Item
+		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
+			return err
+		}
+		itemlist.Items = append(itemlist.Items, item)
+	}
+
+	return c.JSON(http.StatusOK, itemlist)
 }
 
 /*
@@ -195,6 +262,7 @@ func main() {
 	e.POST("/items", addItem)
 	e.GET("/items", getItemList)
 	e.GET("/items/:id", getItemDetail)
+	e.GET("/search", getItemByKeyword)
 	e.GET("/image/:imageFilename", getImg)
 
 	// Start server
