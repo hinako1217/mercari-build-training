@@ -63,9 +63,6 @@ func addItem(c echo.Context) error {
 		return err
 	}
 
-	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, imagefile)
-	message := fmt.Sprintf("item received: %s", item.Name)
-	res := Response{Message: message}
 	//画像ファイルを開く
 	src, err := imagefile.Open()
 	if err != nil {
@@ -76,7 +73,6 @@ func addItem(c echo.Context) error {
 	//hash化
 	h := sha256.New()
 	if _, err := io.Copy(h, src); err != nil { //srcからhへ中身をコピー
-		//log.Fatal(err)
 		return err
 	}
 	str_hash_sha256 := fmt.Sprintf("%x", h.Sum(nil))
@@ -107,6 +103,10 @@ func addItem(c echo.Context) error {
 	if err := encoder.Encode(itemlist); err != nil {
 		log.Fatal(err)
 	}
+
+	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, item.Image)
+	message := fmt.Sprintf("item received: %s", item.Name)
+	res := Response{Message: message}
 
 	return c.JSON(http.StatusOK, res)
 }
