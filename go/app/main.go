@@ -66,21 +66,31 @@ func addItem(c echo.Context) error {
 	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, imagefile)
 	message := fmt.Sprintf("item received: %s", item.Name)
 	res := Response{Message: message}
-	//画像ファイルをオープン
+	//画像ファイルを開く
 	src, err := imagefile.Open()
 	if err != nil {
 		return err
 	}
 	defer src.Close()
 
-	//hash
+	//hash化
 	h := sha256.New()
-	if _, err := io.Copy(h, src); err != nil {
+	if _, err := io.Copy(h, src); err != nil { //srcからhへ中身をコピー
 		//log.Fatal(err)
 		return err
 	}
 	str_hash_sha256 := fmt.Sprintf("%x", h.Sum(nil))
 	item.Image = str_hash_sha256 + ".jpg"
+
+	//imagesフォルダに画像ファイルを作成
+	dst, err := os.Create(fmt.Sprintf("images/%s", item.Image))
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	if _, err = io.Copy(dst, src); err != nil { //srcからdstへ中身をコピー
+		return err
+	}
 
 	// add item to list
 	itemlist.Items = append(itemlist.Items, item)
