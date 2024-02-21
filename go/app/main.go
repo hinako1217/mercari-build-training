@@ -225,7 +225,7 @@ func getItemByKeyword(c echo.Context) error {
 
 	//データベースから指定したキーワードを含む商品一覧を取得
 	keyword := c.QueryParam("keyword")
-	rows, err := db.Query("SELECT name, category, image_name FROM items WHERE name LIKE CONCAT('%', ?, '%')", keyword)
+	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.name LIKE CONCAT('%', ?, '%')", keyword)
 	if err != nil {
 		return err
 	}
