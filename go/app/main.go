@@ -101,16 +101,40 @@ func addItem(c echo.Context) error {
 		return err
 	}
 
-	//データベースへ商品を追加
-	stmt, err := db.Prepare("INSERT INTO items (name, category, image_name) VALUES (?, ?, ?)")
+	//categories tableへ商品を追加
+	stmt1, err := db.Prepare("INSERT INTO categories (name) VALUES (?) ON DUPLICATE KEY UPDATE name = VALUES(name)")
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer stmt1.Close()
 
-	if _, err = stmt.Exec(item.Name, item.Category, item.Image); err != nil {
+	if _, err = stmt1.Exec(item.Category); err != nil {
 		return err
 	}
+
+	//categories tableからidを取得
+	/*
+		row, err := db.Query("SELECT id FROM categories WHERE name LIKE ?", item.Category)
+		if err != nil {
+			return err
+		}
+		defer row.Close()
+
+		var category_id int
+		if err := row.Scan(&category_id); err != nil {
+			return err
+		}
+
+		//items tableへ商品を追加
+		stmt2, err := db.Prepare("INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)")
+		if err != nil {
+			return err
+		}
+		defer stmt2.Close()
+
+		if _, err = stmt2.Exec(item.Name, category_id, item.Image); err != nil {
+			return err
+		}*/
 
 	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, item.Image)
 	message := fmt.Sprintf("item received: %s", item.Name)
@@ -136,7 +160,7 @@ func getItemList(c echo.Context) error {
 	}
 
 	//データベースから商品を取得
-	rows, err := db.Query("SELECT name, category, image_name FROM items")
+	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id")
 	if err != nil {
 		return err
 	}
