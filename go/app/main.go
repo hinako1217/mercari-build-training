@@ -99,11 +99,6 @@ func addItem(c echo.Context) error {
 	}
 	defer db.Close()
 
-	err = db.Ping()
-	if err != nil {
-		return err
-	}
-
 	var category_id int
 
 	//categories tableにcategoryが存在しなければ追加し、categoryのidを取得
@@ -153,11 +148,6 @@ func getItemList(c echo.Context) error {
 		return err
 	}
 	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		return err
-	}
 
 	//データベースから商品を取得
 	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id")
@@ -217,11 +207,6 @@ func getItemByKeyword(c echo.Context) error {
 		return err
 	}
 	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		return err
-	}
 
 	//データベースから指定したキーワードを含む商品一覧を取得
 	keyword := c.QueryParam("keyword")
