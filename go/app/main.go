@@ -64,20 +64,20 @@ func addItem(c echo.Context) error {
 	item.Category = c.FormValue("category")
 	imagefile, err := c.FormFile("image")
 	if err != nil {
-		return err
+		return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
 	}
 
 	//画像ファイルを開く
 	src, err := imagefile.Open()
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer src.Close()
 
 	//hash化
 	h := sha256.New()
 	if _, err := io.Copy(h, src); err != nil { //srcからhへ中身をコピー
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	str_hash_sha256 := fmt.Sprintf("%x", h.Sum(nil))
 	item.Image = str_hash_sha256 + ".jpg"
@@ -85,17 +85,17 @@ func addItem(c echo.Context) error {
 	//imagesフォルダに画像ファイルを作成
 	dst, err := os.Create(fmt.Sprintf("images/%s", item.Image))
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer dst.Close()
 	if _, err = io.Copy(dst, src); err != nil { //srcからdstへ中身をコピー
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 
 	//データベースを開く
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer db.Close()
 
@@ -106,29 +106,29 @@ func addItem(c echo.Context) error {
 		if err == sql.ErrNoRows { //QueryRow()の結果が空のとき
 			stmt1, err := db.Prepare("INSERT INTO categories (name) VALUES (?)")
 			if err != nil {
-				return err
+				return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 			}
 			defer stmt1.Close()
 			if _, err = stmt1.Exec(item.Category); err != nil {
-				return err
+				return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 			}
 			if err := db.QueryRow("SELECT id FROM categories WHERE name = $1", item.Category).Scan(&category_id); err != nil {
-				return err
+				return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 			}
 		} else {
-			return err
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 		}
 	}
 
 	//items tableへ商品を追加
 	stmt2, err := db.Prepare("INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)")
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer stmt2.Close()
 
 	if _, err = stmt2.Exec(item.Name, category_id, item.Image); err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 
 	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, item.Image)
@@ -145,14 +145,14 @@ func getItemList(c echo.Context) error {
 	//データベースを開く
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer db.Close()
 
 	//データベースから商品を取得
 	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id")
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer rows.Close()
 
@@ -160,7 +160,7 @@ func getItemList(c echo.Context) error {
 	for rows.Next() {
 		var item Item
 		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
-			return err
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 		}
 		itemlist.Items = append(itemlist.Items, item)
 	}
@@ -175,22 +175,22 @@ func getItemById(c echo.Context) error {
 	var item Item
 	id, err := strconv.Atoi(c.Param("id")) //string to int
 	if err != nil {
-		return err
+		return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
 	}
 
 	//データベースを開く
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer db.Close()
 
 	//items tableとcategories tableをJOINし、指定したidに対応するデータを取得
 	if err := db.QueryRow("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.id = $1", id).Scan(&item.Name, &item.Category, &item.Image); err != nil {
 		if err == sql.ErrNoRows { //QueryRow()の結果が空のとき
-			return err
+			return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
 		} else {
-			return err
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 		}
 	}
 
@@ -204,7 +204,7 @@ func getItemByKeyword(c echo.Context) error {
 	//データベースを開く
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer db.Close()
 
@@ -212,7 +212,7 @@ func getItemByKeyword(c echo.Context) error {
 	keyword := c.QueryParam("keyword")
 	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.name LIKE CONCAT('%', ?, '%')", keyword)
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer rows.Close()
 
@@ -220,7 +220,7 @@ func getItemByKeyword(c echo.Context) error {
 	for rows.Next() {
 		var item Item
 		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
-			return err
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 		}
 		itemlist.Items = append(itemlist.Items, item)
 	}
