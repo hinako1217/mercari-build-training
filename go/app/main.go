@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -175,41 +174,38 @@ func getItemList(c echo.Context) error {
 	return c.JSON(http.StatusOK, itemlist)
 }
 
-func decodeJson() ItemList {
-	jsonfile, err := os.Open("items.json")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer jsonfile.Close()
-
-	//decode
-	var itemlist ItemList
-	decoder := json.NewDecoder(jsonfile)
-	if err := decoder.Decode(&itemlist); err != nil {
-		log.Fatal(err)
-	}
-
-	return itemlist
-}
-
 /*
 e.GET("/items/:id", getItemDetail)
 */
-func getItemDetail(c echo.Context) error {
-	var itemlist ItemList
+func getItemById(c echo.Context) error {
+	var item Item
 	id, err := strconv.Atoi(c.Param("id")) //string to int
 	if err != nil {
 		return err
 	}
-	itemlist = decodeJson()
 
-	if id <= 0 || id > len(itemlist.Items) {
-		log.Fatal(err)
+	//データベースを開く
+	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	//items tableとcategories tableをJOINし、指定したidに対応するデータを取得
+	if err := db.QueryRow("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.id = $1", id).Scan(&item.Name, &item.Category, &item.Image); err != nil {
+		if err == sql.ErrNoRows { //QueryRow()の結果が空のとき
+			return err
+		} else {
+			return err
+		}
 	}
 
-	return c.JSON(http.StatusOK, itemlist.Items[id-1])
+	return c.JSON(http.StatusOK, item)
 }
 
+/*
+e.GET("/search", getItemByKeyword)
+*/
 func getItemByKeyword(c echo.Context) error {
 	//データベースを開く
 	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
@@ -282,7 +278,7 @@ func main() {
 	e.GET("/", root)
 	e.POST("/items", addItem)
 	e.GET("/items", getItemList)
-	e.GET("/items/:id", getItemDetail)
+	e.GET("/items/:id", getItemById)
 	e.GET("/search", getItemByKeyword)
 	e.GET("/image/:imageFilename", getImg)
 
