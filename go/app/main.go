@@ -18,6 +18,10 @@ import (
 )
 
 const (
+	DB_PATH = "../db/mercari.sqlite3"
+)
+
+const (
 	ImgDir = "images"
 )
 
@@ -89,7 +93,7 @@ func addItem(c echo.Context) error {
 	}
 
 	//データベースを開く
-	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
+	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
 		return err
 	}
@@ -144,7 +148,7 @@ e.GET("/items". getItemList)
 */
 func getItemList(c echo.Context) error {
 	//データベースを開く
-	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
+	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
 		return err
 	}
@@ -185,7 +189,7 @@ func getItemById(c echo.Context) error {
 	}
 
 	//データベースを開く
-	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
+	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
 		return err
 	}
@@ -208,7 +212,7 @@ e.GET("/search", getItemByKeyword)
 */
 func getItemByKeyword(c echo.Context) error {
 	//データベースを開く
-	db, err := sql.Open("sqlite3", "/Users/hinako/mercari-build-training/db/mercari.sqlite3")
+	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
 		return err
 	}
