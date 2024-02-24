@@ -33,16 +33,16 @@ type Response struct {
 list of item
 */
 type ItemList struct {
-	Items []Item `json:"items"`
+	Items []Item
 }
 
 /*
 name, category and image of goods
 */
 type Item struct {
-	Name     string `json:"name"`
-	Category string `json:"category"`
-	Image    string `json:"image_name"`
+	Name     string
+	Category string
+	Image    string
 }
 
 /*
