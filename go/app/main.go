@@ -2,7 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +14,11 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+const (
+	DB_PATH = "../db/mercari.sqlite3"
 )
 
 const (
@@ -48,8 +53,6 @@ func root(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
-var itemlist ItemList
-
 /*
 e.POST("/items", addItem)
 */
@@ -61,20 +64,20 @@ func addItem(c echo.Context) error {
 	item.Category = c.FormValue("category")
 	imagefile, err := c.FormFile("image")
 	if err != nil {
-		return err
+		return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
 	}
 
 	//画像ファイルを開く
 	src, err := imagefile.Open()
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer src.Close()
 
 	//hash化
 	h := sha256.New()
 	if _, err := io.Copy(h, src); err != nil { //srcからhへ中身をコピー
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	str_hash_sha256 := fmt.Sprintf("%x", h.Sum(nil))
 	item.Image = str_hash_sha256 + ".jpg"
@@ -82,27 +85,50 @@ func addItem(c echo.Context) error {
 	//imagesフォルダに画像ファイルを作成
 	dst, err := os.Create(fmt.Sprintf("images/%s", item.Image))
 	if err != nil {
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 	defer dst.Close()
 	if _, err = io.Copy(dst, src); err != nil { //srcからdstへ中身をコピー
-		return err
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 
-	// add item to list
-	itemlist.Items = append(itemlist.Items, item)
-
-	//open file  if it doesn't exist, create file
-	jsonfile, err := os.OpenFile("items.json", os.O_WRONLY|os.O_CREATE, 0664)
+	//データベースを開く
+	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
-		log.Fatal(err)
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
-	defer jsonfile.Close()
+	defer db.Close()
 
-	//encode
-	encoder := json.NewEncoder(jsonfile)
-	if err := encoder.Encode(itemlist); err != nil {
-		log.Fatal(err)
+	var category_id int
+
+	//categories tableにcategoryが存在しなければ追加し、categoryのidを取得
+	if err := db.QueryRow("SELECT id FROM categories WHERE name = $1", item.Category).Scan(&category_id); err != nil {
+		if err == sql.ErrNoRows { //QueryRow()の結果が空のとき
+			stmt1, err := db.Prepare("INSERT INTO categories (name) VALUES (?)")
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+			}
+			defer stmt1.Close()
+			if _, err = stmt1.Exec(item.Category); err != nil {
+				return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+			}
+			if err := db.QueryRow("SELECT id FROM categories WHERE name = $1", item.Category).Scan(&category_id); err != nil {
+				return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+			}
+		} else {
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+		}
+	}
+
+	//items tableへ商品を追加
+	stmt2, err := db.Prepare("INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)")
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+	defer stmt2.Close()
+
+	if _, err = stmt2.Exec(item.Name, category_id, item.Image); err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 
 	c.Logger().Infof("Receive item: %s, %s, %s", item.Name, item.Category, item.Image)
@@ -112,28 +138,32 @@ func addItem(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
-func decodeJson() ItemList {
-	jsonfile, err := os.Open("items.json")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer jsonfile.Close()
-
-	//decode
-	var itemlist ItemList
-	decoder := json.NewDecoder(jsonfile)
-	if err := decoder.Decode(&itemlist); err != nil {
-		log.Fatal(err)
-	}
-
-	return itemlist
-}
-
 /*
 e.GET("/items". getItemList)
 */
 func getItemList(c echo.Context) error {
-	itemlist := decodeJson()
+	//データベースを開く
+	db, err := sql.Open("sqlite3", DB_PATH)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+	defer db.Close()
+
+	//データベースから商品を取得
+	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id")
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+	defer rows.Close()
+
+	var itemlist ItemList
+	for rows.Next() {
+		var item Item
+		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+		}
+		itemlist.Items = append(itemlist.Items, item)
+	}
 
 	return c.JSON(http.StatusOK, itemlist)
 }
@@ -141,18 +171,61 @@ func getItemList(c echo.Context) error {
 /*
 e.GET("/items/:id", getItemDetail)
 */
-func getItemDetail(c echo.Context) error {
+func getItemById(c echo.Context) error {
+	var item Item
 	id, err := strconv.Atoi(c.Param("id")) //string to int
 	if err != nil {
-		return err
-	}
-	itemlist := decodeJson()
-
-	if id <= 0 || id > len(itemlist.Items) {
-		log.Fatal(err)
+		return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
 	}
 
-	return c.JSON(http.StatusOK, itemlist.Items[id-1])
+	//データベースを開く
+	db, err := sql.Open("sqlite3", DB_PATH)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+	defer db.Close()
+
+	//items tableとcategories tableをJOINし、指定したidに対応するデータを取得
+	if err := db.QueryRow("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.id = $1", id).Scan(&item.Name, &item.Category, &item.Image); err != nil {
+		if err == sql.ErrNoRows { //QueryRow()の結果が空のとき
+			return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
+		} else {
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+		}
+	}
+
+	return c.JSON(http.StatusOK, item)
+}
+
+/*
+e.GET("/search", getItemByKeyword)
+*/
+func getItemByKeyword(c echo.Context) error {
+	//データベースを開く
+	db, err := sql.Open("sqlite3", DB_PATH)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+	defer db.Close()
+
+	//データベースから指定したキーワードを含む商品一覧を取得
+	keyword := c.QueryParam("keyword")
+	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.name LIKE CONCAT('%', ?, '%')", keyword)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+	defer rows.Close()
+
+	var itemlist ItemList
+	for rows.Next() {
+		var item Item
+		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+		}
+		itemlist.Items = append(itemlist.Items, item)
+	}
+
+	return c.JSON(http.StatusOK, itemlist)
 }
 
 /*
@@ -194,7 +267,8 @@ func main() {
 	e.GET("/", root)
 	e.POST("/items", addItem)
 	e.GET("/items", getItemList)
-	e.GET("/items/:id", getItemDetail)
+	e.GET("/items/:id", getItemById)
+	e.GET("/search", getItemByKeyword)
 	e.GET("/image/:imageFilename", getImg)
 
 	// Start server
