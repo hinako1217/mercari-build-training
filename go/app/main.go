@@ -289,6 +289,7 @@ func main() {
 
 	if err := maketables(); err != nil {
 		fmt.Println("Failed to create tables")
+		return
 	}
 
 	// Routes
