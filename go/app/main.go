@@ -48,7 +48,22 @@ func root(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
-var itemlist ItemList
+func decodeJson() (*ItemList, error) {
+	jsonfile, err := os.Open("items.json")
+	if err != nil {
+		return nil, err
+	}
+	defer jsonfile.Close()
+
+	//decode
+	var itemlist ItemList
+	decoder := json.NewDecoder(jsonfile)
+	if err := decoder.Decode(&itemlist); err != nil {
+		return nil, err
+	}
+
+	return &itemlist, nil
+}
 
 /*
 e.POST("/items", addItem)
@@ -89,8 +104,14 @@ func addItem(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 
+	//jsonファイルから商品のデータを読み込み
+	itemlist, err := decodeJson()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+
 	// add item to list
-	itemlist.Items = append(itemlist.Items, item)
+	(*itemlist).Items = append((*itemlist).Items, item)
 
 	//open file  if it doesn't exist, create file
 	jsonfile, err := os.OpenFile("items.json", os.O_WRONLY|os.O_CREATE, 0664)
@@ -101,7 +122,7 @@ func addItem(c echo.Context) error {
 
 	//encode
 	encoder := json.NewEncoder(jsonfile)
-	if err := encoder.Encode(itemlist); err != nil {
+	if err := encoder.Encode(*itemlist); err != nil {
 		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
 
@@ -110,23 +131,6 @@ func addItem(c echo.Context) error {
 	res := Response{Message: message}
 
 	return c.JSON(http.StatusOK, res)
-}
-
-func decodeJson() (*ItemList, error) {
-	jsonfile, err := os.Open("items.json")
-	if err != nil {
-		return nil, err
-	}
-	defer jsonfile.Close()
-
-	//decode
-	var itemlist ItemList
-	decoder := json.NewDecoder(jsonfile)
-	if err := decoder.Decode(&itemlist); err != nil {
-		return nil, err
-	}
-
-	return &itemlist, nil
 }
 
 /*
