@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -31,16 +30,17 @@ type Response struct {
 list of item
 */
 type ItemList struct {
-	Items []Item
+	Items []Item `json:"items"`
 }
 
 /*
 name, category and image of goods
 */
 type Item struct {
-	Name     string
-	Category string
-	Image    string
+	Id       int    `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Image    string `json:"image_name"`
 }
 
 /*
@@ -103,6 +103,12 @@ func addItem(c echo.Context) error {
 	if _, err := io.Copy(h, src); err != nil { //srcからhへ中身をコピー
 		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
+
+	_, err = src.Seek(0, 0)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+
 	str_hash_sha256 := fmt.Sprintf("%x", h.Sum(nil))
 	item.Image = str_hash_sha256 + ".jpg"
 
@@ -174,7 +180,7 @@ func getItemList(c echo.Context) error {
 	defer db.Close()
 
 	//データベースから商品を取得
-	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id")
+	rows, err := db.Query("SELECT items.id, items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
@@ -183,7 +189,7 @@ func getItemList(c echo.Context) error {
 	var itemlist ItemList
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
+		if err := rows.Scan(&item.Id, &item.Name, &item.Category, &item.Image); err != nil {
 			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 		}
 		itemlist.Items = append(itemlist.Items, item)
@@ -210,7 +216,7 @@ func getItemById(c echo.Context) error {
 	defer db.Close()
 
 	//items tableとcategories tableをJOINし、指定したidに対応するデータを取得
-	if err := db.QueryRow("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.id = $1", id).Scan(&item.Name, &item.Category, &item.Image); err != nil {
+	if err := db.QueryRow("SELECT items.id, items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.id = $1", id).Scan(&item.Id, &item.Name, &item.Category, &item.Image); err != nil {
 		if err == sql.ErrNoRows { //QueryRow()の結果が空のとき
 			return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
 		} else {
@@ -234,7 +240,7 @@ func getItemByKeyword(c echo.Context) error {
 
 	//データベースから指定したキーワードを含む商品一覧を取得
 	keyword := c.QueryParam("keyword")
-	rows, err := db.Query("SELECT items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.name LIKE CONCAT('%', ?, '%')", keyword)
+	rows, err := db.Query("SELECT items.id, items.name, categories.name, items.image_name FROM items INNER JOIN categories on items.category_id = categories.id  WHERE items.name LIKE CONCAT('%', ?, '%')", keyword)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 	}
@@ -243,7 +249,7 @@ func getItemByKeyword(c echo.Context) error {
 	var itemlist ItemList
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.Name, &item.Category, &item.Image); err != nil {
+		if err := rows.Scan(&item.Id, &item.Name, &item.Category, &item.Image); err != nil {
 			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
 		}
 		itemlist.Items = append(itemlist.Items, item)
@@ -256,13 +262,32 @@ func getItemByKeyword(c echo.Context) error {
 e.GET("/image/:imageFilename", getImg)
 */
 func getImg(c echo.Context) error {
-	// Create image path
-	imgPath := path.Join(ImgDir, c.Param("imageFilename"))
+	var image_name string
 
-	if !strings.HasSuffix(imgPath, ".jpg") {
-		res := Response{Message: "Image path does not end with .jpg"}
-		return c.JSON(http.StatusBadRequest, res)
+	id, err := strconv.Atoi(c.Param("imageFilename")) //string to int
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
 	}
+
+	//データベースを開く
+	db, err := sql.Open("sqlite3", DB_PATH)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+	}
+	defer db.Close()
+
+	//items tableから指定したidに対応するimage_nameを取得
+	if err := db.QueryRow("SELECT items.image_name FROM items WHERE items.id = $1", id).Scan(&image_name); err != nil {
+		if err == sql.ErrNoRows { //QueryRow()の結果が空のとき
+			return c.JSON(http.StatusBadRequest, Response{Message: err.Error()})
+		} else {
+			return c.JSON(http.StatusInternalServerError, Response{Message: err.Error()})
+		}
+	}
+
+	// Create image path
+	imgPath := path.Join(ImgDir, image_name)
+
 	if _, err := os.Stat(imgPath); err != nil {
 		c.Logger().Debugf("Image not found: %s", imgPath)
 		imgPath = path.Join(ImgDir, "default.jpg")
