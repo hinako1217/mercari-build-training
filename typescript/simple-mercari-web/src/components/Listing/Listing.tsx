@@ -58,7 +58,6 @@ export const Listing: React.FC<Prop> = (props) => {
           <input type='text' name='name' id='name' placeholder='name' onChange={onValueChange} required />
           <input type='text' name='category' id='category' placeholder='category' onChange={onValueChange} />
           <input type='file' name='image' id='image' onChange={onFileChange} required />
-          <br/>
           <button type='submit'>List this item</button>
         </div>
       </form>
