@@ -2,6 +2,10 @@
   text-align: center;
 }
 
+body {
+  background-color: #c4d8ee;
+}
+
 .Title {
   background-color: #912723;
   min-height: 8vh;
@@ -16,6 +20,7 @@
 .Listing {
   background-color: #c4d8ee;
   min-height: 8vh;
+  margin: 3% 0;
   display: flex;
   flex-direction: column;
   align-items: center;
