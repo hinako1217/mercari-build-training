@@ -18,11 +18,9 @@ import (
 )
 
 const (
-	DB_PATH = "../db/mercari.sqlite3"
-)
-
-const (
-	ImgDir = "images"
+	ImgDir      = "images"
+	DB_PATH     = "../db/mercari.sqlite3"
+	Schema_PATH = "../db/items.db"
 )
 
 type Response struct {
@@ -33,16 +31,16 @@ type Response struct {
 list of item
 */
 type ItemList struct {
-	Items []Item `json:"items"`
+	Items []Item
 }
 
 /*
 name, category and image of goods
 */
 type Item struct {
-	Name     string `json:"name"`
-	Category string `json:"category"`
-	Image    string `json:"image_name"`
+	Name     string
+	Category string
+	Image    string
 }
 
 /*
@@ -51,6 +49,32 @@ e.GET("/", root)
 func root(c echo.Context) error {
 	res := Response{Message: "Hello, world!"}
 	return c.JSON(http.StatusOK, res)
+}
+
+/*
+データベースにテーブルを作成
+*/
+func maketables() error {
+	//データベースを開く
+	db, err := sql.Open("sqlite3", DB_PATH)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	//スキーマを読み込む
+	schema, err := os.ReadFile(Schema_PATH)
+	if err != nil {
+		return err
+	}
+
+	//データベースにテーブルを作成
+	_, err = db.Exec(string(schema))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 /*
@@ -262,6 +286,11 @@ func main() {
 		AllowOrigins: []string{frontURL},
 		AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
 	}))
+
+	if err := maketables(); err != nil {
+		fmt.Println("Failed to create tables")
+		return
+	}
 
 	// Routes
 	e.GET("/", root)
